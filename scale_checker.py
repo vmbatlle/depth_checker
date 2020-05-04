@@ -22,6 +22,9 @@ ANN_BOX_SIZE = 25
 ANN_BOX_X_OFF = 15
 ANN_BOX_Y_OFF = 20
 
+MIN_ALLOWED_DEPTH = 0
+MAX_ALLOWED_DEPTH = 20
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description='Simple scale consistency checker for ORB-SLAM2 and Monodepth2')
@@ -180,7 +183,8 @@ def get_data_from_trajectory(args, trajectory, keypoints, orb_depth, mono_depth)
         if timestamp in keypoints:
             frame = keypoints[timestamp]
             img = frame[0]
-            scale = map(lambda x: x[0][1] / x[1][1], zip(orb_depth[img], mono_depth[img]))
+            scale = [mono[1] / orb[1] for mono, orb in zip(mono_depth[img], orb_depth[img]) \
+                if MIN_ALLOWED_DEPTH <= orb[1] and orb[1] <= MAX_ALLOWED_DEPTH]
             # num_features = len(scale)
             # sorted_scale = np.sort(scale)
             plot_label.append(int(img))
@@ -324,6 +328,9 @@ def img_show(args, trajectory, keypoints, orb_depth, mono_depth):
     BOX_N_WHISKER_WIDTH = 100
     box_and_whisker_page = 0
 
+    static_bar1 = None
+    static_bar2 = None
+    static_bar3 = None
     for timestamp in trajectory:
         if timestamp in keypoints:
             frame = keypoints[timestamp]
@@ -342,11 +349,16 @@ def img_show(args, trajectory, keypoints, orb_depth, mono_depth):
             img_data = mpimg.imread(img_path)
             ax.imshow(img_data, cmap='gray')
 
+            indexes = []
+            for i, d in enumerate(orb_depth[img]):
+                if MIN_ALLOWED_DEPTH <= d[1] and d[1] <= MAX_ALLOWED_DEPTH:
+                    indexes.append(i)
+
             x = []
             y = []
             orb = []
             ann = np.zeros((IMG_HEIGHT // ANN_BOX_SIZE, IMG_WIDTH // ANN_BOX_SIZE))
-            for d in orb_depth[img]:
+            for d in np.array(orb_depth[img])[indexes]:
                 Px = int(d[0][0])
                 Py = int(d[0][1])
                 x.append(Px)
@@ -366,9 +378,13 @@ def img_show(args, trajectory, keypoints, orb_depth, mono_depth):
                         weight='bold',
                         size=7)
                     ann[ann_box_y - 1 : ann_box_y + 1, ann_box_x - 1 : ann_box_x + 1] = 1
-            c = np.array(orb)
-            c = (1.0 - (c - np.min(c)) / (np.max(c) - np.min(c))).squeeze()
-            ax.scatter(x, y, s=10, marker='o', c=c, cmap='plasma')
+            c = np.array(orb).squeeze()
+            # c = (1.0 - (c - np.min(c)) / (np.max(c) - np.min(c))).squeeze()
+            mynorm = plt.Normalize(vmin=MIN_ALLOWED_DEPTH, vmax=MAX_ALLOWED_DEPTH)
+            sc = ax.scatter(x, y, s=10, marker='o', c=c, cmap='plasma', norm=mynorm)
+            if static_bar1 != None:
+                static_bar1.remove()
+            static_bar1 = plt.colorbar(sc)
 
             ###################################################################
             # Monodepth features and predicted depths                         #
@@ -381,7 +397,7 @@ def img_show(args, trajectory, keypoints, orb_depth, mono_depth):
             
             mono = []
             ann = np.zeros((IMG_HEIGHT // ANN_BOX_SIZE, IMG_WIDTH // ANN_BOX_SIZE))
-            for d in mono_depth[img]:
+            for d in np.array(mono_depth[img])[indexes]:
                 Px = int(d[0][0])
                 Py = int(d[0][1])
                 mono.append(d[1])
@@ -399,12 +415,16 @@ def img_show(args, trajectory, keypoints, orb_depth, mono_depth):
                         weight='bold',
                         size=7)
                     ann[ann_box_y - 1 : ann_box_y + 1, ann_box_x - 1 : ann_box_x + 1] = 1
-            c = np.array(mono)
-            c = (1.0 - (c - np.min(c)) / (np.max(c) - np.min(c))).squeeze()
-            ax.scatter(x, y, s=10, marker='o', c=c, cmap='plasma')
+            c = np.array(mono).squeeze()
+            # c = (1.0 - (c - np.min(c)) / (np.max(c) - np.min(c))).squeeze()
+            mynorm = plt.Normalize(vmin=MIN_ALLOWED_DEPTH, vmax=MAX_ALLOWED_DEPTH)
+            sc = ax.scatter(x, y, s=10, marker='o', c=c, cmap='plasma', norm=mynorm)
+            if static_bar2 != None:
+                static_bar2.remove()
+            static_bar2 = plt.colorbar(sc)
 
             ###################################################################
-            # Ratio GT/Prediction (i.e. ORB-SLAM2 / Monodepth2)               #
+            # Ratio GT/Prediction (i.e. Monodepth2 / ORB-SLAM2)               #
             ###################################################################
             ax = plt.subplot(3, 2, 5)
             ax.clear()
@@ -413,12 +433,16 @@ def img_show(args, trajectory, keypoints, orb_depth, mono_depth):
             ax.imshow(img_data, cmap='gray')
             
             ratio = []
-            for d_orb, d_mono in zip(orb_depth[img], mono_depth[img]):
+            for d_orb, d_mono in \
+                zip(np.array(orb_depth[img])[indexes], np.array(mono_depth[img])[indexes]):
                 # print(d_orb[1], d_mono[1])
-                ratio.append(abs(1.0 - d_orb[1] / d_mono[1]))
+                ratio.append(abs(1.0 - d_mono[1] / d_orb[1]))
             c = np.array(ratio).squeeze()
             mynorm = plt.Normalize(vmin=np_min_c, vmax=np_max_c)
-            ax.scatter(x, y, s=10, marker='o', c=c, cmap='plasma', norm=mynorm)
+            sc = ax.scatter(x, y, s=10, marker='o', c=c, cmap='plasma', norm=mynorm)
+            if static_bar3 != None:
+                static_bar3.remove()
+            static_bar3 = plt.colorbar(sc)
 
             ###################################################################
             # Box and whisker plot: min, Q1, Q2, Q3 and max values of ratio   #
@@ -477,7 +501,7 @@ def img_show(args, trajectory, keypoints, orb_depth, mono_depth):
                 once = False
                 plt.waitforbuttonpress()
 
-            plt.savefig('output/' + str(img).zfill(6) + '.png')
+            # plt.savefig('output/' + str(img).zfill(6) + '.png')
             plt.pause(0.01)
 
             line0.remove()
@@ -514,6 +538,16 @@ def turn_detection(args, trajectory, keypoints, orb_depth, mono_depth):
 
             line.remove()
 
+def autolabel(ax, rects, format):
+    """Attach a text label above each bar in *rects*, displaying its height."""
+    for rect in rects:
+        height = rect.get_height()
+        ax.annotate(format.format(height),
+                    xy=(rect.get_x() + rect.get_width() / 2, height),
+                    xytext=(0, 3),  # 3 points vertical offset
+                    textcoords="offset points",
+                    ha='center', va='bottom')
+
 def box_and_whisker(args, trajectory, keypoints, orb_depth, mono_depth):
 
     plot_label, plot_min, plot_Q1, plot_Q2, plot_Q3, plot_max, \
@@ -546,12 +580,23 @@ def box_and_whisker(args, trajectory, keypoints, orb_depth, mono_depth):
     error = []
     rmse = []
     ratio = []
+    MAX_HISTOGRAM = 100
+    DIV_HISTOGRAM = 5
+    histogram = [list() for _ in range(MAX_HISTOGRAM)]
     for (k, v) in orb_depth.items():
         orb = v
         mono = mono_depth[k]
-        error.extend([abs(pred[1] - gt[1][0]) for gt, pred in zip(orb, mono)])
-        rmse.extend([(pred[1] - gt[1][0]) ** 2 for gt, pred in zip(orb, mono)])
-        ratio.extend([abs(1.0 - gt[1][0] / pred[1]) for gt, pred in zip(orb, mono)])
+        error.extend([abs(pred[1] - gt[1][0]) for gt, pred in zip(orb, mono) \
+            if MIN_ALLOWED_DEPTH <= gt[1][0] and gt[1][0] <= MAX_ALLOWED_DEPTH])
+        rmse.extend([(pred[1] - gt[1][0]) ** 2 for gt, pred in zip(orb, mono) \
+            if MIN_ALLOWED_DEPTH <= gt[1][0] and gt[1][0] <= MAX_ALLOWED_DEPTH])
+        ratio.extend([abs(1.0 - pred[1] / gt[1][0]) for gt, pred in zip(orb, mono) \
+            if MIN_ALLOWED_DEPTH <= gt[1][0] and gt[1][0] <= MAX_ALLOWED_DEPTH])
+        
+        for gt, pred in zip(orb, mono):
+            index = int(gt[1][0] // DIV_HISTOGRAM)
+            if index < MAX_HISTOGRAM:
+                histogram[index].append(abs(1.0 - pred[1] / gt[1][0]))
 
     print('')
     print('-- Diff error (MONO - ORB) --')
@@ -574,6 +619,35 @@ def box_and_whisker(args, trajectory, keypoints, orb_depth, mono_depth):
     max_IQR = np.argmax(plot_IQR)
     print('Max IQR:', plot_IQR[max_IQR], ' (at frame ', plot_label[max_IQR] ,')')
     print('')
+
+    _, ((ax4), (ax5)) =  plt.subplots(2,1)
+    ax4.set_title("Nº muestras")
+    ax5.set_title("Mediana del error %")
+    x = []
+    height_len = []
+    height_median = []
+    for i in range(0, len(histogram), 2):
+        x.append(i * DIV_HISTOGRAM + DIV_HISTOGRAM / 2.0)
+        median = np.median(histogram[i])
+        height_len.append(len(histogram[i]))
+        height_median.append(median)
+    rects11 = ax4.bar(x, height_len, DIV_HISTOGRAM, color='tab:blue', label='even')
+    rects12 = ax5.bar(x, height_median, DIV_HISTOGRAM, color='tab:blue', label='even')
+    autolabel(ax4, rects11, '{}')
+    autolabel(ax5, rects12, '{0:.2f}')
+
+    x = []
+    height_len = []
+    height_median = []
+    for i in range(1, len(histogram), 2):
+        x.append(i * DIV_HISTOGRAM + DIV_HISTOGRAM / 2.0)
+        median = np.median(histogram[i])
+        height_len.append(len(histogram[i]))
+        height_median.append(median)
+    rects21 = ax4.bar(x, height_len, DIV_HISTOGRAM, color='tab:orange', label='odd')
+    rects22 = ax5.bar(x, height_median, DIV_HISTOGRAM, color='tab:orange', label='odd')
+    # autolabel(ax4, rects21, '{}')
+    # autolabel(ax5, rects22, '{0:.2f}')
 
     ###########################################################################
     # Find IQR local maxima                                                   #
