@@ -23,7 +23,7 @@ ANN_BOX_X_OFF = 15
 ANN_BOX_Y_OFF = 20
 
 MIN_ALLOWED_DEPTH = 5
-MAX_ALLOWED_DEPTH = 20
+MAX_ALLOWED_DEPTH = 50
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -580,11 +580,10 @@ def box_and_whisker(args, trajectory, keypoints, orb_depth, mono_depth):
 
     error = []
     rmse = []
-    RATIO_OR_ABSOLUTE = False # True ==> Ratio // False ==> Absolute error
     ratio = []
-    MAX_HISTOGRAM = 100
-    DIV_HISTOGRAM = 5
-    histogram = [list() for _ in range(MAX_HISTOGRAM)]
+    MAX_HISTOGRAM = 400
+    DIV_HISTOGRAM = 0.1
+    histogram = [list() for _ in range(min(MAX_HISTOGRAM, math.ceil((MAX_ALLOWED_DEPTH - MIN_ALLOWED_DEPTH) / DIV_HISTOGRAM)))]
     for (k, v) in orb_depth.items():
         orb = v
         mono = mono_depth[k]
@@ -596,12 +595,16 @@ def box_and_whisker(args, trajectory, keypoints, orb_depth, mono_depth):
             if MIN_ALLOWED_DEPTH <= gt[1][0] and gt[1][0] <= MAX_ALLOWED_DEPTH])
         
         for gt, pred in zip(orb, mono):
-            index = int(gt[1][0] // DIV_HISTOGRAM)
-            if index < MAX_HISTOGRAM:
-                if RATIO_OR_ABSOLUTE:
-                    histogram[index].append(abs(1.0 - pred[1] / gt[1][0]))
-                else:
-                    histogram[index].append(abs(gt[1][0] - pred[1]))
+            index = int((gt[1][0] - MIN_ALLOWED_DEPTH) // DIV_HISTOGRAM)
+            if index < MAX_HISTOGRAM and \
+               MIN_ALLOWED_DEPTH <= gt[1][0] and \
+               gt[1][0] <= MAX_ALLOWED_DEPTH:
+                # RATIO
+                # histogram[index].append(abs(1.0 - pred[1] / gt[1][0]))
+                # ABS
+                # histogram[index].append(abs(gt[1][0] - pred[1]))
+                # RMSE
+                histogram[index].append((gt[1][0] - pred[1]) ** 2)
 
     print('')
     print('-- Diff error (ORB - MONO) --')
@@ -627,32 +630,27 @@ def box_and_whisker(args, trajectory, keypoints, orb_depth, mono_depth):
 
     _, ((ax4), (ax5)) =  plt.subplots(2,1)
     ax4.set_title("Nº muestras")
-    ax5.set_title("Mediana del error %")
-    x = []
-    height_len = []
-    height_median = []
-    for i in range(0, len(histogram), 2):
-        x.append(i * DIV_HISTOGRAM + DIV_HISTOGRAM / 2.0)
-        median = np.median(histogram[i])
-        height_len.append(len(histogram[i]))
-        height_median.append(median)
-    rects11 = ax4.bar(x, height_len, DIV_HISTOGRAM, color='tab:blue', label='even')
-    rects12 = ax5.bar(x, height_median, DIV_HISTOGRAM, color='tab:blue', label='even')
-    autolabel(ax4, rects11, '{}')
-    autolabel(ax5, rects12, '{0:.2f}', ["black"])
-
-    x = []
-    height_len = []
-    height_median = []
-    for i in range(1, len(histogram), 2):
-        x.append(i * DIV_HISTOGRAM + DIV_HISTOGRAM / 2.0)
-        median = np.median(histogram[i])
-        height_len.append(len(histogram[i]))
-        height_median.append(median)
-    rects21 = ax4.bar(x, height_len, DIV_HISTOGRAM, color='tab:orange', label='odd')
-    rects22 = ax5.bar(x, height_median, DIV_HISTOGRAM, color='tab:orange', label='odd')
-    # autolabel(ax4, rects21, '{}')
-    # autolabel(ax5, rects22, '{0:.2f}')
+    # ax5.set_title("Mediana del error %")
+    # ax5.set_title("Mediana del error abs")
+    ax5.set_title("RMSE")
+    bar_colors = ['tab:blue', 'tab:orange']
+    label_colors = [['black', (0,0,0,0), (0,0,0,0)], [(0,0,0,0)]]
+    x_value = [list() for _ in range(len(bar_colors))]
+    bar4_value = [list() for _ in range(len(bar_colors))]
+    bar5_value = [list() for _ in range(len(bar_colors))]
+    for i in range(0, len(histogram), 1):
+        j = i % len(bar_colors)
+        x_value[j].append(MIN_ALLOWED_DEPTH + i * DIV_HISTOGRAM + DIV_HISTOGRAM / 2.0)
+        # median = np.median(histogram[i])
+        rmse = math.sqrt(np.mean(histogram[i]))
+        bar4_value[j].append(len(histogram[i]))
+        # bar5_value[j].append(median)
+        bar5_value[j].append(rmse)
+    for j in range(len(bar_colors)):
+        rects11 = ax4.bar(x_value[j], bar4_value[j], DIV_HISTOGRAM, color=bar_colors[j])
+        rects12 = ax5.bar(x_value[j], bar5_value[j], DIV_HISTOGRAM, color=bar_colors[j])
+        autolabel(ax4, rects11, '{}', label_colors[j])
+        autolabel(ax5, rects12, '{0:.2f}', label_colors[j])
 
     ###########################################################################
     # Find IQR local maxima                                                   #
