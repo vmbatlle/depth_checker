@@ -22,8 +22,8 @@ ANN_BOX_SIZE = 25
 ANN_BOX_X_OFF = 15
 ANN_BOX_Y_OFF = 20
 
-MIN_ALLOWED_DEPTH = 5
-MAX_ALLOWED_DEPTH = 50
+MIN_ALLOWED_DEPTH = 0
+MAX_ALLOWED_DEPTH = 100
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -581,8 +581,8 @@ def box_and_whisker(args, trajectory, keypoints, orb_depth, mono_depth):
     error = []
     rmse = []
     ratio = []
-    MAX_HISTOGRAM = 400
-    DIV_HISTOGRAM = 0.1
+    MAX_HISTOGRAM = 100
+    DIV_HISTOGRAM = 1
     histogram = [list() for _ in range(min(MAX_HISTOGRAM, math.ceil((MAX_ALLOWED_DEPTH - MIN_ALLOWED_DEPTH) / DIV_HISTOGRAM)))]
     for (k, v) in orb_depth.items():
         orb = v
