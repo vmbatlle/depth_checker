@@ -22,7 +22,7 @@ ANN_BOX_SIZE = 25
 ANN_BOX_X_OFF = 15
 ANN_BOX_Y_OFF = 20
 
-MIN_ALLOWED_DEPTH = 0
+MIN_ALLOWED_DEPTH = 5
 MAX_ALLOWED_DEPTH = 20
 
 def parse_args():
@@ -322,7 +322,8 @@ def img_show(args, trajectory, keypoints, orb_depth, mono_depth):
 
     # Ratio normalization
     np_min_c = 0
-    np_max_c = max(abs(1.0 - max(plot_max)), abs(1.0 - min(plot_min)))
+    # np_max_c = max(abs(1.0 - max(plot_max)), abs(1.0 - min(plot_min)))
+    np_max_c = 0.08
 
     # Box-and-whisker plot zoom
     BOX_N_WHISKER_WIDTH = 100
@@ -382,9 +383,8 @@ def img_show(args, trajectory, keypoints, orb_depth, mono_depth):
             # c = (1.0 - (c - np.min(c)) / (np.max(c) - np.min(c))).squeeze()
             mynorm = plt.Normalize(vmin=MIN_ALLOWED_DEPTH, vmax=MAX_ALLOWED_DEPTH)
             sc = ax.scatter(x, y, s=10, marker='o', c=c, cmap='plasma', norm=mynorm)
-            if static_bar1 != None:
-                static_bar1.remove()
-            static_bar1 = plt.colorbar(sc)
+            if static_bar1 == None:
+                static_bar1 = plt.colorbar(sc)
 
             ###################################################################
             # Monodepth features and predicted depths                         #
@@ -419,9 +419,8 @@ def img_show(args, trajectory, keypoints, orb_depth, mono_depth):
             # c = (1.0 - (c - np.min(c)) / (np.max(c) - np.min(c))).squeeze()
             mynorm = plt.Normalize(vmin=MIN_ALLOWED_DEPTH, vmax=MAX_ALLOWED_DEPTH)
             sc = ax.scatter(x, y, s=10, marker='o', c=c, cmap='plasma', norm=mynorm)
-            if static_bar2 != None:
-                static_bar2.remove()
-            static_bar2 = plt.colorbar(sc)
+            if static_bar2 == None:
+                static_bar2 = plt.colorbar(sc)
 
             ###################################################################
             # Ratio GT/Prediction (i.e. Monodepth2 / ORB-SLAM2)               #
@@ -440,9 +439,8 @@ def img_show(args, trajectory, keypoints, orb_depth, mono_depth):
             c = np.array(ratio).squeeze()
             mynorm = plt.Normalize(vmin=np_min_c, vmax=np_max_c)
             sc = ax.scatter(x, y, s=10, marker='o', c=c, cmap='plasma', norm=mynorm)
-            if static_bar3 != None:
-                static_bar3.remove()
-            static_bar3 = plt.colorbar(sc)
+            if static_bar3 == None:
+                static_bar3 = plt.colorbar(sc)
 
             ###################################################################
             # Box and whisker plot: min, Q1, Q2, Q3 and max values of ratio   #
@@ -538,15 +536,18 @@ def turn_detection(args, trajectory, keypoints, orb_depth, mono_depth):
 
             line.remove()
 
-def autolabel(ax, rects, format):
+def autolabel(ax, rects, format, colors = ["black"]):
     """Attach a text label above each bar in *rects*, displaying its height."""
-    for rect in rects:
+    n = len(colors)
+    for i, rect in enumerate(rects):
         height = rect.get_height()
+        j = i % n
+        c = colors[j]
         ax.annotate(format.format(height),
                     xy=(rect.get_x() + rect.get_width() / 2, height),
                     xytext=(0, 3),  # 3 points vertical offset
                     textcoords="offset points",
-                    ha='center', va='bottom')
+                    ha='center', va='bottom', color=c)
 
 def box_and_whisker(args, trajectory, keypoints, orb_depth, mono_depth):
 
@@ -579,6 +580,7 @@ def box_and_whisker(args, trajectory, keypoints, orb_depth, mono_depth):
 
     error = []
     rmse = []
+    RATIO_OR_ABSOLUTE = False # True ==> Ratio // False ==> Absolute error
     ratio = []
     MAX_HISTOGRAM = 100
     DIV_HISTOGRAM = 5
@@ -586,9 +588,9 @@ def box_and_whisker(args, trajectory, keypoints, orb_depth, mono_depth):
     for (k, v) in orb_depth.items():
         orb = v
         mono = mono_depth[k]
-        error.extend([abs(pred[1] - gt[1][0]) for gt, pred in zip(orb, mono) \
+        error.extend([abs(gt[1][0] - pred[1]) for gt, pred in zip(orb, mono) \
             if MIN_ALLOWED_DEPTH <= gt[1][0] and gt[1][0] <= MAX_ALLOWED_DEPTH])
-        rmse.extend([(pred[1] - gt[1][0]) ** 2 for gt, pred in zip(orb, mono) \
+        rmse.extend([(gt[1][0] - pred[1]) ** 2 for gt, pred in zip(orb, mono) \
             if MIN_ALLOWED_DEPTH <= gt[1][0] and gt[1][0] <= MAX_ALLOWED_DEPTH])
         ratio.extend([abs(1.0 - pred[1] / gt[1][0]) for gt, pred in zip(orb, mono) \
             if MIN_ALLOWED_DEPTH <= gt[1][0] and gt[1][0] <= MAX_ALLOWED_DEPTH])
@@ -596,16 +598,19 @@ def box_and_whisker(args, trajectory, keypoints, orb_depth, mono_depth):
         for gt, pred in zip(orb, mono):
             index = int(gt[1][0] // DIV_HISTOGRAM)
             if index < MAX_HISTOGRAM:
-                histogram[index].append(abs(1.0 - pred[1] / gt[1][0]))
+                if RATIO_OR_ABSOLUTE:
+                    histogram[index].append(abs(1.0 - pred[1] / gt[1][0]))
+                else:
+                    histogram[index].append(abs(gt[1][0] - pred[1]))
 
     print('')
-    print('-- Diff error (MONO - ORB) --')
+    print('-- Diff error (ORB - MONO) --')
     print('Mean error: ', np.mean(error))
     print('Median error: ', np.median(error))
     print('RMSE: ', math.sqrt(np.mean(rmse)))
     print('')
 
-    print('-- Ratio: abs(1.0 - ORB / MONO) --')
+    print('-- Ratio: abs(1.0 - MONO / ORB) --')
     print('Mean ratio: ', np.mean(ratio))
     print('Min ratio:', min(ratio))
     print('Q1: ', np.quantile(ratio, 0.25))
@@ -634,7 +639,7 @@ def box_and_whisker(args, trajectory, keypoints, orb_depth, mono_depth):
     rects11 = ax4.bar(x, height_len, DIV_HISTOGRAM, color='tab:blue', label='even')
     rects12 = ax5.bar(x, height_median, DIV_HISTOGRAM, color='tab:blue', label='even')
     autolabel(ax4, rects11, '{}')
-    autolabel(ax5, rects12, '{0:.2f}')
+    autolabel(ax5, rects12, '{0:.2f}', ["black"])
 
     x = []
     height_len = []
