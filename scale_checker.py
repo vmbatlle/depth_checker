@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from matplotlib.ticker import MultipleLocator
 from scipy.spatial.transform import Rotation
+import scipy.stats as stats
 
 
 SCALE_FACTOR = 5.4
@@ -22,8 +23,8 @@ ANN_BOX_SIZE = 25
 ANN_BOX_X_OFF = 15
 ANN_BOX_Y_OFF = 20
 
-MIN_ALLOWED_DEPTH = 0
-MAX_ALLOWED_DEPTH = 100
+MIN_ALLOWED_DEPTH = 5
+MAX_ALLOWED_DEPTH = 20
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -323,7 +324,7 @@ def img_show(args, trajectory, keypoints, orb_depth, mono_depth):
     # Ratio normalization
     np_min_c = 0
     # np_max_c = max(abs(1.0 - max(plot_max)), abs(1.0 - min(plot_min)))
-    np_max_c = 0.08
+    np_max_c = 0.10
 
     # Box-and-whisker plot zoom
     BOX_N_WHISKER_WIDTH = 100
@@ -581,9 +582,10 @@ def box_and_whisker(args, trajectory, keypoints, orb_depth, mono_depth):
     error = []
     rmse = []
     ratio = []
-    MAX_HISTOGRAM = 100
-    DIV_HISTOGRAM = 1
+    MAX_HISTOGRAM = 500
+    DIV_HISTOGRAM = 0.03
     histogram = [list() for _ in range(min(MAX_HISTOGRAM, math.ceil((MAX_ALLOWED_DEPTH - MIN_ALLOWED_DEPTH) / DIV_HISTOGRAM)))]
+    histogram_abs_for_outliers = [list() for _ in range(min(MAX_HISTOGRAM, math.ceil((MAX_ALLOWED_DEPTH - MIN_ALLOWED_DEPTH) / DIV_HISTOGRAM)))]
     for (k, v) in orb_depth.items():
         orb = v
         mono = mono_depth[k]
@@ -605,6 +607,8 @@ def box_and_whisker(args, trajectory, keypoints, orb_depth, mono_depth):
                 # histogram[index].append(abs(gt[1][0] - pred[1]))
                 # RMSE
                 histogram[index].append((gt[1][0] - pred[1]) ** 2)
+                # FOR OUTLIERS
+                histogram_abs_for_outliers[index].append(abs(gt[1][0] - pred[1]))
 
     print('')
     print('-- Diff error (ORB - MONO) --')
@@ -628,29 +632,65 @@ def box_and_whisker(args, trajectory, keypoints, orb_depth, mono_depth):
     print('Max IQR:', plot_IQR[max_IQR], ' (at frame ', plot_label[max_IQR] ,')')
     print('')
 
-    _, ((ax4), (ax5)) =  plt.subplots(2,1)
+    _, ((ax4), (ax6), (ax5)) =  plt.subplots(3,1, gridspec_kw={'height_ratios': [1, 1, 2]})
     ax4.set_title("Nº muestras")
+    ax6.set_title("%% outliers")
     # ax5.set_title("Mediana del error %")
     # ax5.set_title("Mediana del error abs")
     ax5.set_title("RMSE")
     bar_colors = ['tab:blue', 'tab:orange']
-    label_colors = [['black', (0,0,0,0), (0,0,0,0)], [(0,0,0,0)]]
+    label_colors = [['black', (0,0,0,0), (0,0,0,0), (0,0,0,0)], [(0,0,0,0)]]
     x_value = [list() for _ in range(len(bar_colors))]
     bar4_value = [list() for _ in range(len(bar_colors))]
     bar5_value = [list() for _ in range(len(bar_colors))]
+    bar6_value = [list() for _ in range(len(bar_colors))]
+    acc_inliers = 0
+    acc_outliers = 0
     for i in range(0, len(histogram), 1):
         j = i % len(bar_colors)
         x_value[j].append(MIN_ALLOWED_DEPTH + i * DIV_HISTOGRAM + DIV_HISTOGRAM / 2.0)
         # median = np.median(histogram[i])
-        rmse = math.sqrt(np.mean(histogram[i]))
-        bar4_value[j].append(len(histogram[i]))
+        if (len(histogram_abs_for_outliers[i]) == 0):
+            bar4_value[j].append(0)
+            bar5_value[j].append(0)
+            bar6_value[j].append(0)
+            continue
+        q1_for_outliers = np.quantile(histogram_abs_for_outliers[i], 0.25)
+        q3_for_outliers = np.quantile(histogram_abs_for_outliers[i], 0.75)
+        iqr_for_outlier = q3_for_outliers - q1_for_outliers
+        min_for_outliers = q1_for_outliers - 1.5 * iqr_for_outlier
+        max_for_outliers = q3_for_outliers + 1.5 * iqr_for_outlier
+        inliers = [v for j, v in enumerate(histogram[i]) \
+            if histogram_abs_for_outliers[i][j] >= min_for_outliers and \
+                histogram_abs_for_outliers[i][j] <= max_for_outliers]
+        rmse = math.sqrt(np.mean(inliers))
+        bar4_value[j].append(len(inliers))
+        acc_inliers += len(inliers)
+        acc_outliers += len(histogram[i]) - len(inliers)
+        bar6_value[j].append((1.0 - len(inliers) / len(histogram[i])) * 100)
         # bar5_value[j].append(median)
         bar5_value[j].append(rmse)
     for j in range(len(bar_colors)):
         rects11 = ax4.bar(x_value[j], bar4_value[j], DIV_HISTOGRAM, color=bar_colors[j])
         rects12 = ax5.bar(x_value[j], bar5_value[j], DIV_HISTOGRAM, color=bar_colors[j])
+        rects13 = ax6.bar(x_value[j], bar6_value[j], DIV_HISTOGRAM, color=bar_colors[j])
         autolabel(ax4, rects11, '{}', label_colors[j])
         autolabel(ax5, rects12, '{0:.2f}', label_colors[j])
+        autolabel(ax6, rects13, '{0:.2f}', label_colors[j])
+
+    with open("rmse.txt", 'w') as f:
+        max_len = max([len(bar5_value[j]) for j in range(len(bar_colors))])
+        for i in range(max_len):
+            for j in range(len(bar_colors)):
+                if (len(bar5_value[j]) > i):
+                    f.write(str(x_value[j][i]))
+                    f.write(" ")
+                    f.write(str(bar5_value[j][i]))
+                    f.write("\n")
+
+    print("acc_inliers = %d" % (acc_inliers))
+    print("acc_outliers = %d" % (acc_outliers))
+    print('')
 
     ###########################################################################
     # Find IQR local maxima                                                   #
@@ -697,6 +737,75 @@ def box_and_whisker(args, trajectory, keypoints, orb_depth, mono_depth):
     # plt.xticks(np.arange(min(plot_label), max(plot_label)+1, 10.0))
     
     plt.show()
+
+def distribution_of_abs(args, trajectory, keypoints, orb_depth, mono_depth):
+    NORMALIZE_HISTOGRAM = True
+
+    depths = [5, 10, 15, 20]
+    nrows, ncols = 2, 2
+
+    fig = plt.gcf()
+    fig.suptitle("Distribución (pdf) del error", fontweight='bold')
+    for k in range(len(depths)):
+        ax = fig.add_subplot(nrows, ncols, k + 1)
+
+        LOCAL_MIN_DEPTH = depths[k] - 0.5
+        LOCAL_MAX_DEPTH = depths[k] + 0.5
+        HISTOGRAM_SIZE = 400
+        DIV_HISTOGRAM = 0.05
+        HISTOGRAM_CENTER = HISTOGRAM_SIZE * DIV_HISTOGRAM / 2.0
+
+        errors = []
+        histogram = [0 for _ in range(HISTOGRAM_SIZE)]
+        for (k, v) in orb_depth.items():
+            orb = v
+            mono = mono_depth[k]       
+            for gt, pred in zip(orb, mono):
+                if LOCAL_MIN_DEPTH <= gt[1][0] and \
+                gt[1][0] <= LOCAL_MAX_DEPTH:
+                    error = gt[1][0] - pred[1]
+                    if error >= -HISTOGRAM_CENTER and error <= HISTOGRAM_CENTER:
+                        index = int(round((error + HISTOGRAM_CENTER) / DIV_HISTOGRAM))
+                        index = max(0, min(index, HISTOGRAM_SIZE - 1))
+                        errors.append(error)
+                        histogram[index] += 1
+        
+        bar_colors = ['tab:blue'] # ['tab:blue', 'tab:orange']
+        label_colors = [['black', (0,0,0,0), (0,0,0,0)], [(0,0,0,0)]]
+        x_value = [list() for _ in range(len(bar_colors))]
+        bar_value = [list() for _ in range(len(bar_colors))]
+        if NORMALIZE_HISTOGRAM:
+            sum_of_hist = sum(histogram)
+        for i in range(0, len(histogram), 1):
+            j = i % len(bar_colors)
+            x_value[j].append(-HISTOGRAM_CENTER + i * DIV_HISTOGRAM)
+            if NORMALIZE_HISTOGRAM:
+                bar_value[j].append(histogram[i] / float(sum_of_hist) / DIV_HISTOGRAM)
+            else:
+                bar_value[j].append(histogram[i])
+        for j in range(len(bar_colors)):
+            rects = ax.bar(x_value[j], bar_value[j], DIV_HISTOGRAM, color=bar_colors[j])
+            if not NORMALIZE_HISTOGRAM:
+                autolabel(ax, rects, '{}', label_colors[j])
+
+        if NORMALIZE_HISTOGRAM:
+            q1, q3 = np.quantile(errors, [0.25, 0.75])
+            iqr = q3 - q1
+            errors = [error for error in errors if error >= q1 - 1.5 * iqr and error <= q3 + 1.5 * iqr]
+            mu = np.mean(errors)
+            median = np.median(errors)
+            mode = -HISTOGRAM_CENTER + np.argmax(histogram) * DIV_HISTOGRAM
+            sigma = np.std(errors)
+            x = np.linspace(mu - 4*sigma, mu + 4*sigma, 100)
+            ax.plot(x, stats.norm.pdf(x, mu, sigma), color='k')
+            ax.axvline(mu, color='r')
+            ax.axvline(median, color='g')
+            ax.axvline(mode, color='m')
+            ax.set_title("De %0.1f a %0.1f m\n(n = %d, µ = %0.4f, σ = %0.4f)" % (LOCAL_MIN_DEPTH, LOCAL_MAX_DEPTH, sum_of_hist, mu, sigma))
+        else:
+            ax.set_title("De %0.1f a %0.1f m" % (LOCAL_MIN_DEPTH, LOCAL_MAX_DEPTH))
+
+    plt.show()
             
 if __name__ == '__main__':
     args = parse_args()
@@ -707,6 +816,7 @@ if __name__ == '__main__':
     # img_show(args, trajectory, keypoints, orb_depth, mono_depth)
     # turn_detection(args, trajectory, keypoints, orb_depth, mono_depth)
     box_and_whisker(args, trajectory, keypoints, orb_depth, mono_depth)
+    # distribution_of_abs(args, trajectory, keypoints, orb_depth, mono_depth)
     scale = dict()
     for (k, v) in orb_depth.items():
         orb = v
