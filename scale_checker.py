@@ -678,15 +678,21 @@ def box_and_whisker(args, trajectory, keypoints, orb_depth, mono_depth):
         autolabel(ax5, rects12, '{0:.2f}', label_colors[j])
         autolabel(ax6, rects13, '{0:.2f}', label_colors[j])
 
-    with open("rmse.txt", 'w') as f:
-        max_len = max([len(bar5_value[j]) for j in range(len(bar_colors))])
-        for i in range(max_len):
-            for j in range(len(bar_colors)):
-                if (len(bar5_value[j]) > i):
-                    f.write(str(x_value[j][i]))
-                    f.write(" ")
-                    f.write(str(bar5_value[j][i]))
-                    f.write("\n")
+    # with open("rmse.txt", 'w') as f:
+    #    max_len = max([len(bar5_value[j]) for j in range(len(bar_colors))])
+    #    for i in range(max_len):
+    #        for j in range(len(bar_colors)):
+    #            if (len(bar5_value[j]) > i):
+    #                f.write(str(x_value[j][i]))
+    #                f.write(" ")
+    #                f.write(str(bar5_value[j][i]))
+    #                f.write("\n")
+
+    b = 0.15146
+    f = 718.856
+    D = 1
+    z = np.arange(MIN_ALLOWED_DEPTH, MAX_ALLOWED_DEPTH, DIV_HISTOGRAM)
+    ax5.plot(z, z * z / (b * f) * D, 'r')
 
     print("acc_inliers = %d" % (acc_inliers))
     print("acc_outliers = %d" % (acc_outliers))
