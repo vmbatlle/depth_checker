@@ -26,18 +26,6 @@ void cvMatFromNumpy(std::string path, cv::Mat& mat) {
         *pMat = d;
         ++pMat;
     }
-    for (size_t i = 0; i < 4; i++) std::cout << mat.at<float>(i) << ", ";
-    std::cout << std::endl;
-    // std::cout << "shape: ";
-    // for (size_t i = 0; i<shape.size(); i++)
-    //     std::cout << shape[i] << ", ";
-    // std::cout << std::endl;
-    // std::cout << "fortran order: " << (fortran_order ? "+" : "-");
-    // std::cout << std::endl;
-    // std::cout << "data: ";
-    // for (size_t i = 0; i<data.size(); i++)
-    //     std::cout << data[i] << ", ";
-    // std::cout << std::endl << std::endl;
 }
 
 /**
