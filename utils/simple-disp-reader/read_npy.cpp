@@ -1,3 +1,25 @@
+/**
+* This file is part of a Bachelor's Degree Final Project.
+*
+* Copyright (C) 2020 Víctor M. Batlle <736478 at unizar dot es> (University of Zaragoza)
+* For more information see <https://github.com/vmbatlle/depth_checker>
+*
+* This file is free software: you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation, either version 3 of the License, or
+* (at your option) any later version.
+*
+* This file is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+* GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this file. If not, see <http://www.gnu.org/licenses/>.
+*
+* See Monodepthd2 also repo at <https://github.com/nianticlabs/monodepth2>
+*/
+
 #include <algorithm>
 #include <iostream>
 #include <string>
@@ -55,6 +77,8 @@ void disp_show(const cv::Mat& disp) {
     cv::imshow("disparity heat map", plot_disp);
     cv::waitKey();
 }
+
+#define DEBUG
 
 /**
  * Converts disparity (in pixels) to depth (in meters)
